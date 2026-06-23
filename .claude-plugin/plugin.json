@@ -1,6 +1,6 @@
 {
   "name": "intent-code",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Intent-aware code-knowledge index for LLM agents. Index a repo once, query it by intent (debugging/extending/reviewing/onboarding), and cut the token cost of re-reading files.",
   "author": { "name": "Harsha Rahul Boggaram" },
   "homepage": "https://github.com/harsharahul/intent-code",
@@ -9,8 +9,8 @@
   "keywords": ["code-search", "rag", "mcp", "intent", "code-index"],
   "mcpServers": {
     "code": {
-      "command": "intent-code",
-      "args": ["serve-mcp", "."]
+      "command": "uvx",
+      "args": ["--from", "intent-code[treesitter]", "intent-code", "serve-mcp", "."]
     }
   }
 }
