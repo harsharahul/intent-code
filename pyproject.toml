@@ -11,6 +11,16 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Harsha Rahul Boggaram" }]
 keywords = ["llm", "code-search", "rag", "claude-code", "mcp", "intent", "vector-database", "code-index"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries",
+]
 dependencies = [
   "intent-vector-db>=0.2,<0.3",   # the intent-db library (PyPI dist name; import is `intentdb`)
   "pathspec>=0.12,<2",            # gitignore matching; MPL-2.0 (used as a library, not modified)

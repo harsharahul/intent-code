@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/intent-code)](https://pypi.org/project/intent-code/)
 [![CI](https://github.com/harsharahul/intent-code/actions/workflows/ci.yml/badge.svg)](https://github.com/harsharahul/intent-code/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/pypi/pyversions/intent-code)](https://pypi.org/project/intent-code/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/intent-code/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 An intent-aware code-knowledge index for LLM agents, built on

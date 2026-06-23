@@ -24,7 +24,7 @@ jobs:
       - name: Install intent-vector-db (the intent-db library, public git) and this package
         run: |
           uv pip install "intent-vector-db @ git+https://github.com/harsharahul/intent-db@main"
-          uv pip install -e ".[treesitter,dev]"
+          uv pip install --no-sources -e ".[treesitter,dev]"
       - name: Run tests
         run: uv run --no-sync pytest -q
       - name: Audit dependencies for known vulnerabilities
