@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "code": {
-      "command": "intent-code",
-      "args": ["serve-mcp", "."]
+      "command": "uvx",
+      "args": ["--from", "intent-code[treesitter]", "intent-code", "serve-mcp", "."]
     }
   }
 }
