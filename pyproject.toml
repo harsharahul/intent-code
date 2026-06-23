@@ -12,12 +12,12 @@ license = { text = "MIT" }
 authors = [{ name = "Harsha Rahul Boggaram" }]
 keywords = ["llm", "code-search", "rag", "claude-code", "mcp", "intent", "vector-database", "code-index"]
 dependencies = [
-  "intent-db>=0.2,<0.3",
-  "pathspec>=0.12,<2",       # gitignore matching; MPL-2.0 (used as a library, not modified)
+  "intent-vector-db>=0.2,<0.3",   # the intent-db library (PyPI dist name; import is `intentdb`)
+  "pathspec>=0.12,<2",            # gitignore matching; MPL-2.0 (used as a library, not modified)
 ]
 
 # tree-sitter is OPTIONAL. Without it the indexer falls back to text chunking, so the
-# base install stays tiny (intent-db + pathspec). We depend on the OFFICIAL tree-sitter
+# base install stays tiny (intent-vector-db + pathspec). We depend on the OFFICIAL tree-sitter
 # org packages (github.com/tree-sitter/*) rather than a third-party meta-bundle, for
 # auditable provenance. Exact versions are hash-pinned in uv.lock.
 [project.optional-dependencies]
@@ -44,9 +44,9 @@ intent-code-hook = "intent_code.hook:main"
 where = ["src"]
 
 # For local development against the sibling intent-db checkout (uv sync / uv add).
-# Plain `pip install intent-code` resolves intent-db from PyPI instead.
+# Plain `pip install intent-code` resolves intent-vector-db from PyPI instead.
 [tool.uv.sources]
-intent-db = { path = "../intent-db", editable = true }
+intent-vector-db = { path = "../intent-db", editable = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
