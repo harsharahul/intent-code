@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "intent-code"
+version = "0.1.0"
+description = "Intent-aware code-knowledge index for LLM agents, built on intent-db: index a repo once, query it by intent, cut the token cost of re-reading files."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Harsha Rahul Boggaram" }]
+keywords = ["llm", "code-search", "rag", "claude-code", "mcp", "intent", "vector-database", "code-index"]
+dependencies = [
+  "intent-db>=0.2,<0.3",
+  "pathspec>=0.12,<2",       # gitignore matching; MPL-2.0 (used as a library, not modified)
+]
+
+# tree-sitter is OPTIONAL. Without it the indexer falls back to text chunking, so the
+# base install stays tiny (intent-db + pathspec). We depend on the OFFICIAL tree-sitter
+# org packages (github.com/tree-sitter/*) rather than a third-party meta-bundle, for
+# auditable provenance. Exact versions are hash-pinned in uv.lock.
+[project.optional-dependencies]
+treesitter = [
+  "tree-sitter>=0.23,<0.26",
+  "tree-sitter-python>=0.23,<0.26",
+  "tree-sitter-javascript>=0.23,<0.26",
+  "tree-sitter-typescript>=0.23,<0.26",
+  "tree-sitter-go>=0.23,<0.26",
+  "tree-sitter-rust>=0.23,<0.26",
+  "tree-sitter-java>=0.23,<0.26",
+  "tree-sitter-c>=0.23,<0.26",
+  "tree-sitter-cpp>=0.23,<0.26",
+  "tree-sitter-ruby>=0.23,<0.26",
+  "tree-sitter-c-sharp>=0.23,<0.26",
+]
+dev = ["pytest>=9.0.3,<10", "pip-audit>=2.7"]  # pytest floor avoids CVE-2025-71176
+
+[project.scripts]
+intent-code = "intent_code.cli:main"
+intent-code-hook = "intent_code.hook:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# For local development against the sibling intent-db checkout (uv sync / uv add).
+# Plain `pip install intent-code` resolves intent-db from PyPI instead.
+[tool.uv.sources]
+intent-db = { path = "../intent-db", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

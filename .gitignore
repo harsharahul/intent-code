@@ -1,0 +1,16 @@
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.intentdb/
+*.intentdb*
+build/
+dist/
+.python-version
+# uv.lock encodes the local intent-db path source; commit a portable lock once
+# intent-db is published to PyPI.
+uv.lock
+# local working docs (never committed)
+HANDOFF.md
+PLAN.md
+*.local.md

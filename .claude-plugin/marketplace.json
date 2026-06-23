@@ -1,0 +1,14 @@
+{
+  "name": "intent-code",
+  "owner": {
+    "name": "Harsha Rahul Boggaram",
+    "url": "https://github.com/harsharahul"
+  },
+  "plugins": [
+    {
+      "name": "intent-code",
+      "source": "./",
+      "description": "Intent-aware code-knowledge index: code_search/code_map/code_neighbors MCP tools, the /code-index and /code-note commands, and a PostToolUse freshness hook."
+    }
+  ]
+}
