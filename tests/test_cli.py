@@ -5,6 +5,24 @@ import json
 from intent_code.cli import main
 
 
+def test_cli_note_local_flag(repo, capsys):
+    root = repo({"a.py": "def foo():\n    return 1\n"})
+    main(["index", str(root), "--embedder", "hashing:dim=512", "--local"])
+    capsys.readouterr()
+    assert (
+        main(["note", "put", str(root), "my-note", "--text", "# gotcha\nbeware", "--covers", "a.py", "--local"])
+        == 0
+    )
+    capsys.readouterr()
+    # the note lands in the LOCAL knowledge dir, not the committed docs/codemap
+    assert (root / ".intentdb" / "codemap" / "notes" / "my-note.md").exists()
+    assert not (root / "docs" / "codemap").exists()
+    # and is retrievable with --local
+    assert main(["note", "get", str(root), "my-note", "--local", "--json"]) == 0
+    note = json.loads(capsys.readouterr().out)
+    assert "beware" in note["markdown"]
+
+
 def test_cli_index_then_search(repo, capsys):
     root = repo({"a.py": "def foo():\n    return bar()\n\n\ndef bar():\n    return 1\n"})
     assert main(["index", str(root), "--embedder", "hashing:dim=512"]) == 0

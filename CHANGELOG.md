@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - Unreleased
+
+### Added
+- `--local` flag on the `note` subcommands, so notes use the same `.intentdb`
+  knowledge dir as an index built with `--local` instead of writing to the
+  committed `docs/codemap`.
+
 ## [0.1.1] - 2026-06-22
 
 ### Added

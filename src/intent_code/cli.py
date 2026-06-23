@@ -210,6 +210,14 @@ def cmd_serve_mcp(args) -> int:
     return 0
 
 
+def _add_local(sp: argparse.ArgumentParser) -> None:
+    sp.add_argument(
+        "--local",
+        action="store_true",
+        help="use the local .intentdb knowledge dir instead of committing docs/codemap",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="intent-code",
@@ -222,22 +230,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_repo(sp)
     sp.add_argument("--embedder", help="embedder spec (default: auto-detect)")
-    sp.add_argument(
-        "--local",
-        action="store_true",
-        help="keep generated docs under .intentdb (do not commit them)",
-    )
+    _add_local(sp)
     sp.set_defaults(func=cmd_init)
 
     sp = sub.add_parser("index", help="(re)index a repository (incremental)")
     _add_repo(sp)
     sp.add_argument("--full", action="store_true", help="force a full rebuild")
     sp.add_argument("--embedder", help="embedder spec (default: auto-detect)")
-    sp.add_argument(
-        "--local",
-        action="store_true",
-        help="keep generated docs under .intentdb (do not commit them)",
-    )
+    _add_local(sp)
     sp.set_defaults(func=cmd_index)
 
     sp = sub.add_parser("search", help="search the index")
@@ -293,12 +293,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     g = nsub.add_parser("get", help="print a note")
     _add_repo(g)
+    _add_local(g)
     g.add_argument("note_id")
     g.add_argument("--json", action="store_true")
     g.set_defaults(func=cmd_note_get)
 
     g = nsub.add_parser("put", help="write/update a note (from --file, --text, or stdin)")
     _add_repo(g)
+    _add_local(g)
     g.add_argument("note_id")
     g.add_argument("--file", help="read markdown from a file")
     g.add_argument("--text", help="markdown content")
@@ -307,10 +309,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     g = nsub.add_parser("list-stale", help="notes whose covered files changed")
     _add_repo(g)
+    _add_local(g)
     g.set_defaults(func=cmd_note_list_stale)
 
     g = nsub.add_parser("rm", help="delete a note")
     _add_repo(g)
+    _add_local(g)
     g.add_argument("note_id")
     g.set_defaults(func=cmd_note_rm)
 
