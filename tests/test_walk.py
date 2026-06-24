@@ -46,3 +46,31 @@ def test_kinds(repo):
     assert by_rel["a.py"].kind == "code" and by_rel["a.py"].lang == "python"
     assert by_rel["b.md"].kind == "text" and by_rel["b.md"].lang is None
     assert "c.unknownext" not in by_rel  # unknown extensions are skipped
+
+
+def test_agent_instruction_files_excluded(repo):
+    # Files written by `init` must not be indexed (re-index feedback loop).
+    root = repo(
+        {
+            "a.py": "x = 1\n",
+            "CLAUDE.md": "# protocol\n",
+            "GEMINI.md": "# protocol\n",
+            "AGENTS.md": "# protocol\n",
+            ".github/copilot-instructions.md": "# protocol\n",
+            ".github/prompts/code-index.prompt.md": "do it\n",
+            ".gemini/commands/code-index.toml": "prompt = 'x'\n",
+            "docs/guide.md": "# real doc\n",
+        }
+    )
+    rels = {sf.relpath for sf in iter_source_files(root)}
+    assert "a.py" in rels
+    assert "docs/guide.md" in rels  # genuine docs still indexed
+    for excluded in (
+        "CLAUDE.md",
+        "GEMINI.md",
+        "AGENTS.md",
+        ".github/copilot-instructions.md",
+        ".github/prompts/code-index.prompt.md",
+    ):
+        assert excluded not in rels
+    assert not any(r.startswith(".gemini/") for r in rels)

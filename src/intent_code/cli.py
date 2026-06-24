@@ -19,8 +19,6 @@ from pathlib import Path
 from .index import CodeIndex
 from .protocol import PROTOCOL_MD
 
-_MCP_ENTRY = {"command": "intent-code", "args": ["serve-mcp", "."]}
-
 
 def _open(args) -> CodeIndex:
     return CodeIndex(
@@ -30,46 +28,47 @@ def _open(args) -> CodeIndex:
     )
 
 
-def _write_mcp_json(repo: str) -> str:
-    path = Path(repo) / ".mcp.json"
-    if path.exists():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
-            return "left unchanged (could not parse existing .mcp.json)"
-        servers = data.setdefault("mcpServers", {})
-        if "code" in servers:
-            return "already present"
-        servers["code"] = _MCP_ENTRY
-        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        return "merged into existing .mcp.json"
-    path.write_text(
-        json.dumps({"mcpServers": {"code": _MCP_ENTRY}}, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    return "created .mcp.json"
+_NEXT_HINT = {
+    "claude": "restart Claude Code",
+    "copilot": "reload the VS Code window",
+    "gemini": "restart the Gemini CLI",
+}
 
 
 def cmd_init(args) -> int:
+    from .agents import resolve_agents, wire_agents
+
     with CodeIndex(
         args.repo, embedder=args.embedder, local_knowledge=args.local
     ) as ci:
         report = ci.index(full=True)
+        if report.embedder_warning:
+            print(f"warning: {report.embedder_warning}", file=sys.stderr)
         protocol_path = ci.idb_dir / "AGENT_PROTOCOL.md"
         protocol_path.write_text(PROTOCOL_MD, encoding="utf-8")
-    mcp_status = _write_mcp_json(args.repo)
+    agents = resolve_agents(args.agent)
+    wired = wire_agents(args.repo, agents)
     print(
         json.dumps(
             {
                 "index": report.to_dict(),
-                "mcp_json": mcp_status,
+                "agents": wired,
                 "protocol": str(protocol_path),
-                "next": "restart Claude Code; the 'code' MCP tools will be available",
+                "next": "; ".join(_NEXT_HINT[a] for a in agents)
+                + " to load the 'code' tools",
             },
             indent=2,
         )
     )
     return 0
+
+
+def cmd_install_hooks(args) -> int:
+    from .githooks import install_git_hooks
+
+    result = install_git_hooks(args.repo)
+    print(json.dumps(result, indent=2))
+    return 0 if result.get("ok") else 1
 
 
 def _add_repo(sp: argparse.ArgumentParser) -> None:
@@ -268,12 +267,24 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
 
     sp = sub.add_parser(
-        "init", help="index the repo and wire Claude Code (.mcp.json + protocol)"
+        "init", help="index the repo and wire an agent (MCP config + protocol)"
     )
     _add_repo(sp)
+    sp.add_argument(
+        "--agent",
+        action="append",
+        choices=["claude", "copilot", "gemini", "all"],
+        help="agent(s) to wire up; repeatable (default: claude)",
+    )
     sp.add_argument("--embedder", help="embedder spec (default: auto-detect)")
     _add_local(sp)
     sp.set_defaults(func=cmd_init)
+
+    sp = sub.add_parser(
+        "install-hooks", help="install git hooks that keep the index fresh"
+    )
+    _add_repo(sp)
+    sp.set_defaults(func=cmd_install_hooks)
 
     sp = sub.add_parser("index", help="(re)index a repository (incremental)")
     _add_repo(sp)

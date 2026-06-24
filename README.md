@@ -86,6 +86,44 @@ intent-code flow your.module.handle_request           # the ordered call sequenc
 The plugin wires the MCP server, the `/code-index` and `/code-note` commands,
 and an optional PostToolUse freshness hook.
 
+### Use with GitHub Copilot or Gemini CLI
+
+The same MCP server works with any agent that speaks MCP. `init` writes each
+agent's native config and the protocol into its instruction file:
+
+```bash
+intent-code init . --agent copilot   # .vscode/mcp.json + .github/copilot-instructions.md
+intent-code init . --agent gemini    # .gemini/settings.json + GEMINI.md
+intent-code init . --agent all        # claude + copilot + gemini at once
+```
+
+Writes are idempotent: instruction files get a marked managed block and JSON
+configs are key-merged, so re-running never clobbers your own content. The files
+`init` generates are excluded from the index, so the protocol is never indexed
+back into itself.
+
+### Keeping the index fresh
+
+Freshness does not require git. Re-indexing is incremental (only changed files
+re-parse), and you can trigger it three ways, in order of automation:
+
+- Claude Code: the plugin's PostToolUse hook marks edited files dirty.
+- Any agent: the protocol tells it to call `code_index` after edits.
+- Git repos: `intent-code install-hooks .` adds commit/merge/checkout hooks that
+  flag the index stale, so the next query re-indexes on its own.
+
+### Indexing multiple repositories
+
+One index lives at the path you point `init`/`serve-mcp` at, and the walk skips
+every nested `.git/` at any depth. So:
+
+- Point at a single repo for that repo's index (run `init` inside each repo for
+  isolated indexes).
+- Point at a parent folder of several repos for one combined, cross-repo index.
+
+Git hooks are per-repository, so the combined-parent case relies on the
+`code_index` path for freshness rather than hooks.
+
 ## How it works
 
 The index is a single intent-db SQLite file under `.intentdb/` (add it to your

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "intent-code"
-version = "0.2.0"
+version = "0.2.1"
 description = "Intent-aware code-knowledge index for LLM agents, built on intent-db: index a repo once, query it by intent, cut the token cost of re-reading files."
 readme = "README.md"
 requires-python = ">=3.10"

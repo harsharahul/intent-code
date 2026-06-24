@@ -1,6 +1,6 @@
 {
   "name": "intent-code",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Intent-aware code-knowledge index for LLM agents. Index a repo once, query it by intent (debugging/extending/reviewing/onboarding), and cut the token cost of re-reading files.",
   "author": { "name": "Harsha Rahul Boggaram" },
   "homepage": "https://github.com/harsharahul/intent-code",
