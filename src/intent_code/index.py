@@ -17,7 +17,7 @@ from . import cast_chunk
 from . import manifest as _manifest
 from . import parsing
 from . import walk as _walk
-from .embedder_auto import auto_embedder_spec
+from .embedder_auto import auto_embedder_spec, describe_auto
 from .intents import register_code_intents
 
 _RESERVED_LAYERS = {"manifest", "repomap"}
@@ -32,9 +32,10 @@ class IndexReport:
     files_skipped: int = 0
     stale_notes: list[str] = field(default_factory=list)
     embedder_spec: str = ""
+    embedder_warning: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d = {
             "added": self.added,
             "changed": self.changed,
             "removed": self.removed,
@@ -43,6 +44,9 @@ class IndexReport:
             "stale_notes": self.stale_notes,
             "embedder_spec": self.embedder_spec,
         }
+        if self.embedder_warning:
+            d["embedder_warning"] = self.embedder_warning
+        return d
 
 
 class CodeIndex:
@@ -66,7 +70,13 @@ class CodeIndex:
             self.idb_dir / "codemap" if local_knowledge else self.root / "docs" / "codemap"
         )
         first = not self.db_path.exists()
-        spec = embedder or (auto_embedder_spec() if first else None)
+        self._embedder_warning: str | None = None
+        if embedder:
+            spec = embedder
+        elif first:
+            spec, self._embedder_warning = describe_auto()
+        else:
+            spec = None
         self.idb = IntentDB(str(self.db_path), embedder=spec)
         from .notes import NotesStore
 
@@ -98,7 +108,8 @@ class CodeIndex:
         old_files: dict[str, Any] = old.get("files", {})
         new_files: dict[str, Any] = {}
         add_items: list[tuple[str, str, dict]] = []
-        added = changed = removed = parsed = skipped = 0
+        added = changed = parsed = skipped = 0
+        to_remove: list[str] = []
         seen: set[str] = set()
 
         exclude = {self.idb_dir, self.knowledge_dir}
@@ -124,18 +135,16 @@ class CodeIndex:
             added += a
             changed += c
             if prev:
-                gone = set(prev.get("symbols", {})) - set(entry.get("symbols", {}))
-                for key in gone:
-                    if self.idb.delete(key):
-                        removed += 1
+                to_remove.extend(
+                    set(prev.get("symbols", {})) - set(entry.get("symbols", {}))
+                )
 
         # Files that disappeared entirely.
         for relpath, prev in old_files.items():
             if relpath not in seen:
-                for key in prev.get("symbols", {}):
-                    if self.idb.delete(key):
-                        removed += 1
+                to_remove.extend(prev.get("symbols", {}))
 
+        removed = self._delete_keys(to_remove)
         if add_items:
             self.idb.add_many(add_items)
 
@@ -152,6 +161,9 @@ class CodeIndex:
         stale = self._post_index(manifest, old_files)
         _manifest.save_manifest(self.idb, manifest)
 
+        # Surface the embedder fallback warning only once: a long-running MCP
+        # server reuses one CodeIndex, so clear it after the first report.
+        warning, self._embedder_warning = self._embedder_warning, None
         return IndexReport(
             added=added,
             changed=changed,
@@ -160,6 +172,7 @@ class CodeIndex:
             files_skipped=skipped,
             stale_notes=stale,
             embedder_spec=self.embedder_spec,
+            embedder_warning=warning,
         )
 
     def _index_file(self, sf, data: bytes, prev):
@@ -397,6 +410,114 @@ class CodeIndex:
         m = _manifest.load_manifest(self.idb)
         g = _graph.build_graph(m)
         return _graph.neighbors(g, symbol, direction=direction, k=k)
+
+    # -- comprehension --------------------------------------------------------
+
+    def _read_span(self, relpath: str, start_line: int, end_line: int) -> str:
+        try:
+            lines = (
+                (self.root / relpath).read_text(encoding="utf-8", errors="replace").splitlines()
+            )
+        except OSError:
+            return ""
+        return "\n".join(lines[max(0, start_line - 1) : end_line])
+
+    def read(self, symbol: str) -> dict | None:
+        """Return a symbol's full source span (no truncation, from the index)."""
+        self._lazy_reindex()  # pick up pending edits so spans are fresh
+        from . import graph as _graph
+
+        g = _graph.build_graph(_manifest.load_manifest(self.idb))
+        keys = _graph._resolve(g, symbol)
+        if not keys:
+            return None
+        sd = g.symbols[keys[0]]
+        return {
+            "doc_key": keys[0],
+            "qualname": sd["qualname"],
+            "file": sd["file"],
+            "kind": sd["kind"],
+            "start_line": sd["start_line"],
+            "end_line": sd["end_line"],
+            "matches": len(keys),
+            "code": self._read_span(sd["file"], sd["start_line"], sd["end_line"]),
+        }
+
+    def flow(self, symbol: str) -> dict | None:
+        """Return the ordered call sequence inside a symbol's body."""
+        self._lazy_reindex()  # pick up pending edits so spans are fresh
+        from . import graph as _graph
+
+        g = _graph.build_graph(_manifest.load_manifest(self.idb))
+        keys = _graph._resolve(g, symbol)
+        if not keys:
+            return None
+        sd = g.symbols[keys[0]]
+        steps = []
+        for name in sd.get("calls", []):
+            targets = sorted(g.name_index.get(name, ()))
+            loc = None
+            if targets:
+                t = g.symbols[targets[0]]
+                loc = f"{t['file']}:{t['start_line']}"
+            steps.append(
+                {"call": name, "target": targets[0] if targets else None, "location": loc}
+            )
+        return {"symbol": sd["qualname"], "file": sd["file"], "steps": steps}
+
+    def context(self, symbol: str, depth: int = 2, budget_tokens: int = 4000) -> dict | None:
+        """Assemble the full bodies of a symbol and what it calls, in call order."""
+        self._lazy_reindex()  # pick up pending edits so spans are fresh
+        from . import graph as _graph
+
+        g = _graph.build_graph(_manifest.load_manifest(self.idb))
+        keys = _graph._resolve(g, symbol)
+        if not keys:
+            return None
+        start = keys[0]
+        order: list[str] = []
+        seen: set[str] = set()
+        frontier: list[tuple[str, int]] = [(start, 0)]
+        while frontier:
+            key, d = frontier.pop(0)
+            if key in seen or key not in g.symbols:
+                continue
+            seen.add(key)
+            order.append(key)
+            if d >= depth:
+                continue
+            for name in g.symbols[key].get("calls", []):  # ordered
+                for tgt in sorted(g.name_index.get(name, ())):
+                    if tgt not in seen:
+                        frontier.append((tgt, d + 1))
+        budget = max(budget_tokens, 200) * 4
+        blocks: list[str] = []
+        included: list[str] = []
+        used = 0
+        for key in order:
+            sd = g.symbols[key]
+            code = self._read_span(sd["file"], sd["start_line"], sd["end_line"])
+            block = (
+                f"── {sd['file']}:{sd['start_line']}-{sd['end_line']}  "
+                f"{sd['qualname']} ({sd['kind']}) ──\n{code}"
+            )
+            if used + len(block) > budget and blocks:
+                blocks.append(f"… ({len(order) - len(included)} more omitted; raise budget)")
+                break
+            blocks.append(block)
+            used += len(block)
+            included.append(key)
+        return {"root": start, "symbols": included, "text": "\n\n".join(blocks)}
+
+    def _delete_keys(self, keys: list[str]) -> int:
+        """Delete many doc_keys, using intent-db's batch API when available."""
+        keys = list(keys)
+        if not keys:
+            return 0
+        delete_many = getattr(self.idb, "delete_many", None)
+        if delete_many is not None:
+            return len(delete_many(keys))
+        return sum(1 for k in keys if self.idb.delete(k))
 
     def feedback(
         self, query: str, doc_key: str, useful: bool = True, intent: str | None = None

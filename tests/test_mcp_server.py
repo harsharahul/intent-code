@@ -53,3 +53,41 @@ def test_mcp_protocol_and_tools(repo):
         assert bad["result"]["isError"] is True
     finally:
         ci.close()
+
+
+def test_mcp_comprehension_tools(repo):
+    root = repo(
+        {
+            "p.py": (
+                "def validate(x):\n    return x\n\n\n"
+                "def run(x):\n    validate(x)\n    return x\n"
+            )
+        }
+    )
+    ci = CodeIndex(root, embedder="hashing:dim=512")
+    try:
+        _call(ci, "code_index", {}, 1)
+        listed = mcp_server.handle_message(
+            ci, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}
+        )
+        names = {t["name"] for t in listed["result"]["tools"]}
+        assert {"code_read", "code_context", "code_flow"} <= names
+
+        res = _call(ci, "code_read", {"symbol": "run"}, 3)
+        data = json.loads(res["result"]["content"][0]["text"])
+        assert "validate(x)" in data["code"]
+
+        res = _call(ci, "code_flow", {"symbol": "run"}, 4)
+        data = json.loads(res["result"]["content"][0]["text"])
+        assert data["steps"][0]["call"] == "validate"
+
+        res = _call(ci, "code_context", {"symbol": "run"}, 5)
+        data = json.loads(res["result"]["content"][0]["text"])
+        assert "def validate" in data["text"]
+
+        # unknown symbol surfaces as a non-error result with found=false
+        res = _call(ci, "code_read", {"symbol": "missing"}, 6)
+        assert res["result"]["isError"] is False
+        assert json.loads(res["result"]["content"][0]["text"]) == {"found": False}
+    finally:
+        ci.close()

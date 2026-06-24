@@ -38,8 +38,11 @@ ranking from what the agent actually used.
 One index, three ways to consume it (the same data, regenerated on every index):
 
 1. **MCP (primary)** for Claude Code and any tool-capable agent: `code_map`,
-   `code_search`, `code_neighbors`, `note_put` / `note_get` / `note_list_stale`,
-   `code_feedback`, `code_index`.
+   `code_search`, `code_read`, `code_context`, `code_flow`, `code_neighbors`,
+   `note_put` / `note_get` / `note_list_stale`, `code_feedback`, `code_index`.
+   `code_search` finds *where* something is; `code_read` / `code_context` /
+   `code_flow` answer *how it works* by returning full bodies and the call
+   sequence, so the agent stops re-reading whole files.
 2. **Committed markdown** under `docs/codemap/` (`MAP.md`, `index.md`,
    `notes/`): readable by any LLM or human, even without MCP, straight from a
    `git clone`.
@@ -66,6 +69,11 @@ intent-code index .
 intent-code search "where is the retry handled" --intent debugging
 intent-code map
 intent-code neighbors your.module.Class.method --direction callers
+
+# understand how code works, not just where it is
+intent-code read your.module.handle_request           # full body, untruncated
+intent-code context your.module.handle_request        # it + its callees, in call order
+intent-code flow your.module.handle_request           # the ordered call sequence
 ```
 
 ### Claude Code plugin

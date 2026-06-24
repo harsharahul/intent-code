@@ -17,19 +17,30 @@ gives you the gotchas other tools miss.
 - Call `code_map` (or read `docs/codemap/MAP.md`) for a ranked overview of the
   most important symbols. Do this instead of globbing/listing the tree.
 
-## While working — pick the intent for your current phase
-- `code_search(query, intent="debugging")` — bugs, error paths, gotchas.
-- `code_search(query, intent="extending")` — interfaces, signatures, call sites.
-- `code_search(query, intent="reviewing")` — invariants, tests, conventions.
-- `code_search(query, intent="onboarding")` — high-level flow, entry points.
-Each hit has a `location` (file:line) and a signature card. Open ONLY those
-spans. Use `code_neighbors(symbol, direction="callers")` to find blast radius.
+## To LOCATE code: pick the intent for your current phase
+- `code_search(query, intent="debugging")`: bugs, error paths, gotchas.
+- `code_search(query, intent="extending")`: interfaces, signatures, call sites.
+- `code_search(query, intent="reviewing")`: invariants, tests, conventions.
+- `code_search(query, intent="onboarding")`: high-level flow, entry points.
+Each hit has a `location` (file:line) and a signature card.
 
-## When you learn something non-obvious
-- Save it with `note_put(note_id, markdown, covers=[files])`: a gotcha, an
-  invariant, a control/data-flow explanation. It persists across sessions so it
-  is never re-derived. Check `note_list_stale` and refresh notes whose covered
-  files changed.
+## To UNDERSTAND how code works (do NOT re-read whole files)
+- `code_read(symbol)`: the symbol's FULL body, untruncated, by name/qualname.
+- `code_context(symbol)`: the symbol AND what it calls, full bodies in call
+  order, packed to a budget. Use this for "how does X work end to end" instead
+  of opening each callee yourself.
+- `code_flow(symbol)`: just the ordered call sequence (control flow / ordering)
+  with each target's location, without reading the body.
+- `code_neighbors(symbol, direction="callers")`: blast radius before a change.
+`symbol` accepts a doc_key, a qualname (`module.Class.method`), or a bare name.
+
+## Notes are a cache: check them first, write them after
+- For a how/why question, FIRST `code_search(query, layer="note")` and read any
+  hit: a prior session may have already worked it out, saving you the dive.
+- After you understand a non-obvious subsystem (a flow, an invariant, a gotcha,
+  why something is ordered the way it is), `note_put(note_id, markdown,
+  covers=[files])` so the next session reads the note instead of re-deriving it.
+- Check `note_list_stale` and refresh notes whose covered files changed.
 
 ## After using a result
 - Call `code_feedback(query, doc_key, useful=true, intent=...)` so per-intent

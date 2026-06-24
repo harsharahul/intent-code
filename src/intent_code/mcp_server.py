@@ -101,6 +101,53 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "code_read",
+        "description": (
+            "Return a symbol's FULL source span, untruncated, resolved from the "
+            "index by doc_key, qualname, or name. Read exact body logic without "
+            "globbing for the file or guessing line numbers."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "doc_key, qualname, or name"},
+            },
+            "required": ["symbol"],
+        },
+    },
+    {
+        "name": "code_context",
+        "description": (
+            "Assemble the full bodies of a symbol AND what it calls, in call "
+            "order, packed to a token budget. One call shows how a function works "
+            "end to end instead of chasing callees by hand."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "doc_key, qualname, or name"},
+                "depth": {"type": "integer", "default": 2},
+                "budget_tokens": {"type": "integer", "default": 4000},
+            },
+            "required": ["symbol"],
+        },
+    },
+    {
+        "name": "code_flow",
+        "description": (
+            "Return the ordered call sequence inside a function: each call in "
+            "source order with its resolved target location. See control flow and "
+            "ordering without reading the whole body."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "doc_key, qualname, or name"},
+            },
+            "required": ["symbol"],
+        },
+    },
+    {
         "name": "note_put",
         "description": (
             "Write or update a durable knowledge note (a gotcha, an invariant, "
@@ -177,6 +224,19 @@ def call_tool(ci: CodeIndex, name: str, arguments: dict[str, Any]) -> Any:
             direction=arguments.get("direction", "callees"),
             k=int(arguments.get("k", 20)),
         )
+    if name == "code_read":
+        return ci.read(arguments["symbol"]) or {"found": False}
+    if name == "code_context":
+        return (
+            ci.context(
+                arguments["symbol"],
+                depth=int(arguments.get("depth", 2)),
+                budget_tokens=int(arguments.get("budget_tokens", 4000)),
+            )
+            or {"found": False}
+        )
+    if name == "code_flow":
+        return ci.flow(arguments["symbol"]) or {"found": False}
     if name == "note_put":
         return ci.note_put(
             arguments["note_id"],

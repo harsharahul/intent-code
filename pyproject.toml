@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "intent-code"
-version = "0.1.1"
+version = "0.2.0"
 description = "Intent-aware code-knowledge index for LLM agents, built on intent-db: index a repo once, query it by intent, cut the token cost of re-reading files."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,7 +22,7 @@ classifiers = [
   "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-  "intent-vector-db>=0.2,<0.3",   # the intent-db library (PyPI dist name; import is `intentdb`)
+  "intent-vector-db>=0.2.3,<0.3", # the intent-db library (PyPI dist name; import is `intentdb`)
   "pathspec>=0.12,<2",            # gitignore matching; MPL-2.0 (used as a library, not modified)
 ]
 
