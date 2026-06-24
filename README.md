@@ -105,12 +105,18 @@ back into itself.
 ### Keeping the index fresh
 
 Freshness does not require git. Re-indexing is incremental (only changed files
-re-parse), and you can trigger it three ways, in order of automation:
+re-parse), and it stays current several ways:
 
-- Claude Code: the plugin's PostToolUse hook marks edited files dirty.
-- Any agent: the protocol tells it to call `code_index` after edits.
+- Automatic (any agent, no git, no hook): a search polls the tree at query time
+  and re-indexes what changed. A stat gate skips unchanged files, so the check is
+  cheap, and it runs at most once per interval (default 2s). On by default;
+  `INTENT_CODE_AUTO_REFRESH=0` disables it and `INTENT_CODE_REFRESH_TTL` tunes the
+  interval (raise it for very large monorepos).
+- Claude Code: the plugin's PostToolUse hook marks edited files dirty for an
+  immediate pickup.
 - Git repos: `intent-code install-hooks .` adds commit/merge/checkout hooks that
-  flag the index stale, so the next query re-indexes on its own.
+  flag the index stale.
+- Any agent: the protocol also tells it to call `code_index` after edits.
 
 ### Indexing multiple repositories
 

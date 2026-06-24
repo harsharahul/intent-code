@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.3] - 2026-06-24
+
+### Added
+- Automatic query-time freshness: a search now detects edited files and re-indexes
+  what changed with no git and no editor hook required. A stat gate (mtime and size
+  recorded per file) means unchanged files are never read, so the check is cheap,
+  and it runs at most once per `refresh_ttl` (default 2s). On by default; disable
+  with `INTENT_CODE_AUTO_REFRESH=0` or tune with `INTENT_CODE_REFRESH_TTL`.
+
+### Changed
+- Incremental indexing skips reading files whose mtime and size are unchanged
+  (previously every file was read and hashed on every pass), and a poll that finds
+  no changes does no writes at all (no graph or repo-map rebuild, no manifest save).
+
 ## [0.2.2] - 2026-06-24
 
 ### Added

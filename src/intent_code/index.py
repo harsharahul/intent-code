@@ -7,6 +7,7 @@ files are skipped entirely, and only changed symbol/chunk spans are re-embedded.
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -58,10 +59,25 @@ class CodeIndex:
         embedder: str | None = None,
         db_path: str | Path | None = None,
         local_knowledge: bool = False,
+        auto_refresh: bool = True,
+        refresh_ttl: float = 2.0,
     ):
         self.root = Path(repo_root).resolve()
         self.idb_dir = self.root / ".intentdb"
         self.idb_dir.mkdir(parents=True, exist_ok=True)
+        # Query-time freshness: poll the tree (stat only) at most once per TTL and
+        # re-index what changed, so edits are picked up without a hook or git.
+        env = os.environ.get("INTENT_CODE_AUTO_REFRESH")
+        if env is not None:
+            auto_refresh = env.strip().lower() not in ("0", "false", "no", "off")
+        self._auto_refresh = auto_refresh
+        self._refresh_ttl = refresh_ttl
+        ttl_env = os.environ.get("INTENT_CODE_REFRESH_TTL")
+        if ttl_env:
+            try:
+                self._refresh_ttl = float(ttl_env)
+            except ValueError:
+                pass
         self.db_path = Path(db_path) if db_path else self.idb_dir / "code.intentdb"
         # The committed, human-readable knowledge layer (MAP.md, notes, index.md).
         # Default: docs/codemap (travels with the repo); local: under .intentdb.
@@ -112,9 +128,25 @@ class CodeIndex:
         to_remove: list[str] = []
         seen: set[str] = set()
 
+        manifest_changed = full
         exclude = {self.idb_dir, self.knowledge_dir}
         for sf in _walk.iter_source_files(self.root, exclude_dirs=exclude):
             seen.add(sf.relpath)
+            try:
+                st = sf.path.stat()
+            except OSError:
+                continue
+            prev = old_files.get(sf.relpath)
+            # Stat gate: unchanged mtime+size means skip reading the file at all.
+            if (
+                prev is not None
+                and not full
+                and prev.get("mtime_ns") == st.st_mtime_ns
+                and prev.get("size") == st.st_size
+            ):
+                new_files[sf.relpath] = prev
+                skipped += 1
+                continue
             try:
                 data = sf.path.read_bytes()
             except OSError:
@@ -122,18 +154,26 @@ class CodeIndex:
             if _walk.is_probably_binary(data):
                 continue
             fsha = _manifest.file_sha(data)
-            prev = old_files.get(sf.relpath)
             if prev and not full and prev.get("sha") == fsha:
-                new_files[sf.relpath] = prev
+                # Touched but content identical: carry forward, refresh the stat.
+                new_files[sf.relpath] = {
+                    **prev,
+                    "mtime_ns": st.st_mtime_ns,
+                    "size": st.st_size,
+                }
                 skipped += 1
+                manifest_changed = True
                 continue
 
             parsed += 1
             entry, items, a, c = self._index_file(sf, data, prev)
+            entry["mtime_ns"] = st.st_mtime_ns
+            entry["size"] = st.st_size
             new_files[sf.relpath] = entry
             add_items.extend(items)
             added += a
             changed += c
+            manifest_changed = True
             if prev:
                 to_remove.extend(
                     set(prev.get("symbols", {})) - set(entry.get("symbols", {}))
@@ -143,6 +183,7 @@ class CodeIndex:
         for relpath, prev in old_files.items():
             if relpath not in seen:
                 to_remove.extend(prev.get("symbols", {}))
+                manifest_changed = True
 
         removed = self._delete_keys(to_remove)
         if add_items:
@@ -158,8 +199,12 @@ class CodeIndex:
             "embedder": self.embedder_spec,
             "files": new_files,
         }
-        stale = self._post_index(manifest, old_files)
-        _manifest.save_manifest(self.idb, manifest)
+        # A clean poll (only stat checks, nothing changed) does no writes: skip the
+        # graph/repo-map rebuild and the manifest save entirely.
+        symbols_changed = bool(added or changed or removed)
+        stale = self._post_index(manifest, old_files) if (full or symbols_changed) else []
+        if manifest_changed or symbols_changed:
+            _manifest.save_manifest(self.idb, manifest)
 
         # Surface the embedder fallback warning only once: a long-running MCP
         # server reuses one CodeIndex, so clear it after the first report.
@@ -329,8 +374,24 @@ class CodeIndex:
             return []
         return [ln.strip() for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()]
 
-    def _lazy_reindex(self) -> None:
-        if not self._read_dirty():
+    def _last_scan_path(self) -> Path:
+        return self.idb_dir / "last_scan"
+
+    def _scan_due(self) -> bool:
+        """True if auto-refresh is on and the TTL has elapsed since the last poll."""
+        if not self._auto_refresh:
+            return False
+        try:
+            last = float(self._last_scan_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return True  # never scanned
+        return (time.time() - last) >= self._refresh_ttl
+
+    def _refresh(self) -> None:
+        """Pick up edits before a query: re-index if files are queued dirty, or
+        (auto-refresh) if the poll TTL has elapsed. The stat gate in index() makes
+        a no-change poll nearly free. Serialized by a lockfile across processes."""
+        if not (self._read_dirty() or self._scan_due()):
             return
         lock = self.idb_dir / "reindex.lock"
         try:
@@ -340,6 +401,10 @@ class CodeIndex:
             return  # another process is already reindexing
         try:
             self.index()
+            try:
+                self._last_scan_path().write_text(str(time.time()), encoding="utf-8")
+            except OSError:
+                pass
             try:
                 self._dirty_path().unlink()
             except FileNotFoundError:
@@ -360,7 +425,7 @@ class CodeIndex:
         hybrid: bool = True,
         auto_intent: bool = True,
     ) -> list[dict]:
-        self._lazy_reindex()
+        self._refresh()
         where = self._build_where(layer, filters)
         results = self.idb.query(
             query,
@@ -429,7 +494,7 @@ class CodeIndex:
 
     def read(self, symbol: str) -> dict | None:
         """Return a symbol's full source span (no truncation, from the index)."""
-        self._lazy_reindex()  # pick up pending edits so spans are fresh
+        self._refresh()  # pick up pending edits so spans are fresh
         from . import graph as _graph
 
         g = _graph.build_graph(_manifest.load_manifest(self.idb))
@@ -450,7 +515,7 @@ class CodeIndex:
 
     def flow(self, symbol: str) -> dict | None:
         """Return the ordered call sequence inside a symbol's body."""
-        self._lazy_reindex()  # pick up pending edits so spans are fresh
+        self._refresh()  # pick up pending edits so spans are fresh
         from . import graph as _graph
 
         g = _graph.build_graph(_manifest.load_manifest(self.idb))
@@ -472,7 +537,7 @@ class CodeIndex:
 
     def context(self, symbol: str, depth: int = 2, budget_tokens: int = 4000) -> dict | None:
         """Assemble the full bodies of a symbol and what it calls, in call order."""
-        self._lazy_reindex()  # pick up pending edits so spans are fresh
+        self._refresh()  # pick up pending edits so spans are fresh
         from . import graph as _graph
 
         g = _graph.build_graph(_manifest.load_manifest(self.idb))
