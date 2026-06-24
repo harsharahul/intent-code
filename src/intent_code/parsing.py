@@ -4,7 +4,7 @@ A single generic depth-first walk over the parse tree (not per-language `.scm`
 query files): for each node whose type marks a definition we record a `Symbol`
 with a scope-derived qualname, line span, content, and the call names found in
 its body. Import statements are collected at file level. Call edges are
-**name-based and type-unresolved** (Aider-style) — good for ranking, not a
+**name-based and type-unresolved** (Aider-style): good for ranking, not a
 correct call graph.
 
 tree-sitter is optional. If the core binding or a grammar is unavailable,
@@ -309,7 +309,8 @@ def extract(source: bytes, lang: str, relpath: str) -> ParseResult:
                 stack.append((child, scope, current))
 
     for sym in symbols:
-        sym.calls = sorted(set(sym.calls))
+        # preserve call order (dedup by first occurrence); order is meaningful
+        sym.calls = list(dict.fromkeys(sym.calls))
 
     return ParseResult(ok=bool(symbols), symbols=symbols, imports=sorted(set(imports)))
 

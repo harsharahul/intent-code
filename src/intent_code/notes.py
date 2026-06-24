@@ -120,14 +120,14 @@ class NotesStore:
         slugs = self.slugs()
         if not slugs:
             return
-        lines = ["# Code knowledge — notes", ""]
+        lines = ["# Code knowledge notes", ""]
         for slug in slugs:
             rec = self.idb.get(self._doc_key(slug))
             meta = (rec.get("metadata") or {}) if rec else {}
             title = _title_of(rec.get("text", "") if rec else "", slug)
-            covers = ", ".join(meta.get("covers", [])) or "—"
+            covers = ", ".join(meta.get("covers", [])) or "(none)"
             flag = "  **[STALE]**" if meta.get("stale") else ""
-            lines.append(f"- [{title}](notes/{slug}.md) — covers: {covers}{flag}")
+            lines.append(f"- [{title}](notes/{slug}.md) (covers: {covers}){flag}")
         self.knowledge_dir.mkdir(parents=True, exist_ok=True)
         (self.knowledge_dir / "index.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 

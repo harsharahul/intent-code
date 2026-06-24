@@ -24,12 +24,24 @@ def ollama_available(host: str = DEFAULT_OLLAMA_HOST, timeout: float = 0.5) -> b
         return False
 
 
+def describe_auto(
+    model: str = DEFAULT_OLLAMA_MODEL, host: str = DEFAULT_OLLAMA_HOST
+) -> tuple[str, str | None]:
+    """Return (embedder_spec, warning_or_None) for the auto-detected embedder."""
+    override = os.environ.get("INTENT_CODE_EMBEDDER")
+    if override:
+        return override, None
+    if ollama_available(host):
+        return f"ollama:model={model}", None
+    return (
+        HASHING_SPEC,
+        "No Ollama server reachable; using the zero-dependency hashing embedder. "
+        "Conceptual search is much weaker (lexical only). For best results run "
+        "`ollama pull nomic-embed-text` and re-index.",
+    )
+
+
 def auto_embedder_spec(
     model: str = DEFAULT_OLLAMA_MODEL, host: str = DEFAULT_OLLAMA_HOST
 ) -> str:
-    override = os.environ.get("INTENT_CODE_EMBEDDER")
-    if override:
-        return override
-    if ollama_available(host):
-        return f"ollama:model={model}"
-    return HASHING_SPEC
+    return describe_auto(model, host)[0]

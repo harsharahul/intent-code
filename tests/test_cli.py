@@ -45,6 +45,34 @@ def test_cli_init_wires_mcp_and_protocol(repo, capsys):
     assert (root / ".intentdb" / "AGENT_PROTOCOL.md").exists()
 
 
+def test_cli_read_flow_context(repo, capsys):
+    root = repo(
+        {
+            "p.py": (
+                "def validate(x):\n    return x is not None\n\n\n"
+                "def run(x):\n    validate(x)\n    return x\n"
+            )
+        }
+    )
+    main(["index", str(root), "--embedder", "hashing:dim=512"])
+    capsys.readouterr()
+
+    assert main(["read", str(root), "run", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert "validate(x)" in out["code"]
+
+    assert main(["flow", str(root), "run", "--json"]) == 0
+    flow = json.loads(capsys.readouterr().out)
+    assert [s["call"] for s in flow["steps"]] == ["validate"]
+
+    assert main(["context", str(root), "run", "--json"]) == 0
+    ctx = json.loads(capsys.readouterr().out)
+    assert "def validate" in ctx["text"]
+
+    # missing symbol -> non-zero exit
+    assert main(["read", str(root), "nope"]) == 1
+
+
 def test_cli_stats(repo, capsys):
     root = repo({"a.py": "def foo():\n    return 1\n"})
     main(["index", str(root), "--embedder", "hashing:dim=512"])

@@ -79,6 +79,8 @@ def _add_repo(sp: argparse.ArgumentParser) -> None:
 def cmd_index(args) -> int:
     with _open(args) as ci:
         report = ci.index(full=args.full)
+    if report.embedder_warning:
+        print(f"warning: {report.embedder_warning}", file=sys.stderr)
     print(json.dumps(report.to_dict(), indent=2))
     return 0
 
@@ -159,6 +161,46 @@ def cmd_neighbors(args) -> int:
             loc = f"{loc}:{n['start_line']}"
         label = n.get("qualname") or n.get("file")
         print(f"- {n['relation']}: {label}  {loc}")
+    return 0
+
+
+def cmd_read(args) -> int:
+    with _open(args) as ci:
+        result = ci.read(args.symbol)
+    if not result:
+        print("(symbol not found)")
+        return 1
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"# {result['qualname']}  {result['file']}:{result['start_line']}-{result['end_line']}")
+        print(result["code"])
+    return 0
+
+
+def cmd_context(args) -> int:
+    with _open(args) as ci:
+        result = ci.context(args.symbol, depth=args.depth, budget_tokens=args.budget)
+    if not result:
+        print("(symbol not found)")
+        return 1
+    print(json.dumps(result, indent=2) if args.json else result["text"])
+    return 0
+
+
+def cmd_flow(args) -> int:
+    with _open(args) as ci:
+        result = ci.flow(args.symbol)
+    if not result:
+        print("(symbol not found)")
+        return 1
+    if args.json:
+        print(json.dumps(result, indent=2))
+        return 0
+    print(f"{result['symbol']}  ({result['file']})")
+    for i, step in enumerate(result["steps"], 1):
+        loc = f"  {step['location']}" if step.get("location") else ""
+        print(f"{i:>3}. {step['call']}{loc}")
     return 0
 
 
@@ -275,6 +317,28 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("-k", type=int, default=20)
     sp.add_argument("--json", action="store_true")
     sp.set_defaults(func=cmd_neighbors)
+
+    sp = sub.add_parser("read", help="print a symbol's full source (no truncation)")
+    _add_repo(sp)
+    sp.add_argument("symbol", help="doc_key, qualname, or symbol name")
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_read)
+
+    sp = sub.add_parser(
+        "context", help="full bodies of a symbol + what it calls, in call order"
+    )
+    _add_repo(sp)
+    sp.add_argument("symbol", help="doc_key, qualname, or symbol name")
+    sp.add_argument("--depth", type=int, default=2)
+    sp.add_argument("--budget", type=int, default=4000, help="token budget")
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_context)
+
+    sp = sub.add_parser("flow", help="the ordered call sequence inside a function")
+    _add_repo(sp)
+    sp.add_argument("symbol", help="doc_key, qualname, or symbol name")
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_flow)
 
     sp = sub.add_parser("stats", help="index statistics")
     _add_repo(sp)

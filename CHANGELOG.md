@@ -4,12 +4,30 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [0.1.2] - Unreleased
+## [0.2.0] - 2026-06-24
 
 ### Added
+- Comprehension tools that return code, not just locations:
+  - `code_read` (CLI `read`): a symbol's full source span, untruncated, resolved
+    by doc_key, qualname, or name.
+  - `code_context` (CLI `context`): the full bodies of a symbol and what it calls,
+    in call order, packed to a token budget, so an agent can follow a flow end to
+    end in a single call.
+  - `code_flow` (CLI `flow`): the ordered call sequence inside a function, each
+    call with its resolved target location.
 - `--local` flag on the `note` subcommands, so notes use the same `.intentdb`
   knowledge dir as an index built with `--local` instead of writing to the
   committed `docs/codemap`.
+- A clear warning when no embedder is configured and Ollama is unreachable, so it
+  is obvious that search has fallen back to the weaker lexical hashing embedder.
+
+### Changed
+- Call edges now preserve source order (previously sorted alphabetically), so
+  `flow` and `context` reflect the real execution sequence.
+- Re-indexing removes stale symbols in a single batched delete (using intent-db's
+  `delete_many` when present) instead of rebuilding the matrix once per key, which
+  speeds up large refactors and file deletions.
+- Requires `intent-vector-db>=0.2.3` for the batched delete and add paths.
 
 ## [0.1.1] - 2026-06-22
 
