@@ -92,9 +92,10 @@ MAX_BYTES = 1_500_000  # skip files larger than ~1.5 MB
 @dataclass(frozen=True)
 class SourceFile:
     path: Path
-    relpath: str  # posix, relative to repo root
+    relpath: str  # posix, relative to the index root
     lang: str | None  # tree-sitter language name, or None for text files
     kind: str  # "code" or "text"
+    repo: str = "."  # nearest enclosing git repo (posix, rel to root); "." = root
 
 
 def detect_lang(path: Path) -> str | None:
@@ -152,6 +153,9 @@ def iter_source_files(
     root = Path(root).resolve()
     excluded = {Path(p).resolve() for p in (exclude_dirs or set())}
     specs: list[tuple[str, pathspec.PathSpec]] = []
+    # rel_dir -> enclosing git repo (deepest wins). os.walk is top-down, so a
+    # parent is always recorded before its children.
+    repo_of_dir: dict[str, str] = {}
 
     for dirpath, dirnames, filenames in os.walk(root):
         if Path(dirpath).resolve() in excluded:
@@ -159,6 +163,17 @@ def iter_source_files(
             continue
         rel_dir = Path(dirpath).relative_to(root).as_posix()
         rel_dir = "" if rel_dir == "." else rel_dir
+
+        # A directory is a repo root if it holds .git (a dir normally, a file for
+        # submodules/worktrees). Checked before .git is pruned below.
+        if rel_dir == "":
+            repo = "."
+        elif ".git" in dirnames or ".git" in filenames:
+            repo = rel_dir
+        else:
+            parent = rel_dir.rsplit("/", 1)[0] if "/" in rel_dir else ""
+            repo = repo_of_dir.get(parent, ".")
+        repo_of_dir[rel_dir] = repo
 
         gi = Path(dirpath) / ".gitignore"
         if gi.is_file():
@@ -193,4 +208,4 @@ def iter_source_files(
             except OSError:
                 continue
             lang, kind = classified
-            yield SourceFile(path=fpath, relpath=rel, lang=lang, kind=kind)
+            yield SourceFile(path=fpath, relpath=rel, lang=lang, kind=kind, repo=repo)

@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] - 2026-06-24
+
+### Added
+- Repo-scoped search for indexes that span several repositories. Each symbol and
+  chunk is tagged with its enclosing git repository (the nearest ancestor holding
+  `.git`; deepest wins for nested repos and submodules), every search result
+  carries its `repo`, and a search can be scoped with `search --repo <name>` on
+  the CLI or `filters={"repo": "<name>"}` over MCP. `stats` lists the
+  repositories in the index with their file counts.
+
+### Notes
+- Run `index --full` once to backfill repo tags on an index built before 0.2.2;
+  the tag is location-derived, so unchanged files are not otherwise re-touched.
+
 ## [0.2.1] - 2026-06-24
 
 ### Added
