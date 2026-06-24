@@ -58,6 +58,7 @@ TEXT_EXTS: set[str] = {
 ALWAYS_IGNORE_DIRS: set[str] = {
     ".git",
     ".intentdb",
+    ".gemini",
     ".venv",
     "venv",
     "node_modules",
@@ -71,6 +72,18 @@ ALWAYS_IGNORE_DIRS: set[str] = {
     ".idea",
     ".vscode",
     ".eggs",
+}
+
+# Agent instruction files written by `intent-code init`: meta-guidance, not
+# project source. Skipped (at any depth) so the indexer never ingests its own
+# protocol, which would be a re-index feedback loop. ``*.prompt.md`` covers the
+# GitHub Copilot prompt files under ``.github/prompts/``.
+ALWAYS_IGNORE_FILES: set[str] = {
+    "CLAUDE.md",
+    "GEMINI.md",
+    "AGENTS.md",
+    "copilot-instructions.md",
+    ".mcp.json",
 }
 
 MAX_BYTES = 1_500_000  # skip files larger than ~1.5 MB
@@ -165,6 +178,8 @@ def iter_source_files(
         dirnames[:] = kept
 
         for fname in sorted(filenames):
+            if fname in ALWAYS_IGNORE_FILES or fname.endswith(".prompt.md"):
+                continue
             rel = f"{rel_dir}/{fname}" if rel_dir else fname
             if _ignored(rel, specs):
                 continue

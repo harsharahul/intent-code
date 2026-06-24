@@ -73,6 +73,26 @@ def test_cli_read_flow_context(repo, capsys):
     assert main(["read", str(root), "nope"]) == 1
 
 
+def test_cli_init_agent_all(repo, capsys):
+    root = repo({"a.py": "def foo():\n    return 1\n"})
+    assert (
+        main(["init", str(root), "--agent", "all", "--embedder", "hashing:dim=512", "--local"])
+        == 0
+    )
+    out = json.loads(capsys.readouterr().out)
+    assert set(out["agents"]) == {"claude", "copilot", "gemini"}
+    assert (root / ".mcp.json").exists()
+    assert (root / ".vscode" / "mcp.json").exists()
+    assert (root / ".gemini" / "settings.json").exists()
+    assert (root / "GEMINI.md").exists()
+    assert (root / ".github" / "copilot-instructions.md").exists()
+    # the instruction files written into the tree are not re-indexed
+    capsys.readouterr()
+    main(["index", str(root), "--local"])
+    report = json.loads(capsys.readouterr().out)
+    assert report["added"] == 0 and report["changed"] == 0
+
+
 def test_cli_stats(repo, capsys):
     root = repo({"a.py": "def foo():\n    return 1\n"})
     main(["index", str(root), "--embedder", "hashing:dim=512"])

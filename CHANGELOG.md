@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-06-24
+
+### Added
+- `intent-code init --agent claude|copilot|gemini|all` wires the index into each
+  agent's native config: an MCP server entry (`.mcp.json`, `.vscode/mcp.json`, or
+  `.gemini/settings.json`) and the protocol written into the agent's instruction
+  file (`CLAUDE.md`, `.github/copilot-instructions.md`, or `GEMINI.md`). The flag
+  is repeatable and defaults to `claude`. Writes use an idempotent managed block
+  and JSON key-merge, so re-running never clobbers existing content.
+- `intent-code install-hooks` installs git hooks (post-commit, post-merge,
+  post-checkout, post-rewrite) that flag the index stale, so the next query
+  re-indexes incrementally. Editor-agnostic: it appends to an existing shell hook
+  and leaves a non-shell hook untouched.
+
+### Changed
+- The indexer no longer indexes the agent instruction files it generates
+  (`CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `.github/copilot-instructions.md`,
+  `*.prompt.md`, `.mcp.json`, and the `.gemini/` directory), avoiding a re-index
+  feedback loop.
+
 ## [0.2.0] - 2026-06-24
 
 ### Added
