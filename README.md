@@ -115,14 +115,22 @@ re-parse), and you can trigger it three ways, in order of automation:
 ### Indexing multiple repositories
 
 One index lives at the path you point `init`/`serve-mcp` at, and the walk skips
-every nested `.git/` at any depth. So:
+every nested `.git/` at any depth. Point at a single repo for that repo's index,
+or at a parent folder of several repos for one combined, cross-repo index.
 
-- Point at a single repo for that repo's index (run `init` inside each repo for
-  isolated indexes).
-- Point at a parent folder of several repos for one combined, cross-repo index.
+In a combined index every result is tagged with its repository, and you can
+scope a search to one:
 
-Git hooks are per-repository, so the combined-parent case relies on the
-`code_index` path for freshness rather than hooks.
+```bash
+intent-code stats .                          # lists the repos and file counts
+intent-code search "retry logic" --repo api  # only hits from the 'api' repo
+```
+
+Over MCP, pass `filters={"repo": "api"}` to `code_search`. The tag is the path of
+the nearest enclosing `.git` (deepest wins for nested repos and submodules), and
+`.` is the index root. Run `index --full` once to backfill tags on an index built
+before 0.2.2. Git hooks are per-repository, so the combined-parent case relies on
+the `code_index` path for freshness rather than hooks.
 
 ## How it works
 

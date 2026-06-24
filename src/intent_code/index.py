@@ -212,6 +212,7 @@ class CodeIndex:
                     continue
                 meta = {
                     "layer": "symbol",
+                    "repo": sf.repo,
                     "file": sf.relpath,
                     "lang": sym.lang,
                     "kind": sym.kind,
@@ -229,6 +230,7 @@ class CodeIndex:
                 "sha": _manifest.file_sha(data),
                 "lang": sf.lang,
                 "kind": "code",
+                "repo": sf.repo,
                 "imports": result.imports,
                 "symbols": new_syms,
             }
@@ -241,6 +243,7 @@ class CodeIndex:
                     continue
                 meta = {
                     "layer": "chunk",
+                    "repo": sf.repo,
                     "file": sf.relpath,
                     "lang": sf.lang or "text",
                     "kind": "chunk",
@@ -255,6 +258,7 @@ class CodeIndex:
                 "sha": _manifest.file_sha(data),
                 "lang": sf.lang or "text",
                 "kind": "chunk",
+                "repo": sf.repo,
                 "imports": [],
                 "symbols": new_syms,
             }
@@ -382,6 +386,7 @@ class CodeIndex:
             "qualname": m.get("qualname") or m.get("name"),
             "kind": m.get("kind"),
             "lang": m.get("lang"),
+            "repo": m.get("repo"),
             "layer": m.get("layer"),
             "start_line": sl,
             "end_line": el,
@@ -527,6 +532,12 @@ class CodeIndex:
     def stats(self) -> dict:
         s = dict(self.idb.stats())
         manifest = _manifest.load_manifest(self.idb)
-        s["files"] = len(manifest.get("files", {}))
+        files = manifest.get("files", {})
+        s["files"] = len(files)
+        repos: dict[str, int] = {}
+        for entry in files.values():
+            key = entry.get("repo", ".")
+            repos[key] = repos.get(key, 0) + 1
+        s["repos"] = dict(sorted(repos.items()))
         s["embedder"] = self.embedder_spec
         return s

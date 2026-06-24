@@ -92,6 +92,8 @@ def cmd_search(args) -> int:
         filters["kind"] = args.kind
     if args.file:
         filters["file"] = args.file
+    if args.repo_filter:
+        filters["repo"] = args.repo_filter
     with _open(args) as ci:
         hits = ci.search(
             args.query,
@@ -307,6 +309,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--lang", help="filter by language")
     sp.add_argument("--kind", help="filter by symbol kind (function/class/...)")
     sp.add_argument("--file", help="filter by file path")
+    sp.add_argument(
+        "--repo",
+        dest="repo_filter",
+        help="scope to one repo when the index spans several (see 'stats')",
+    )
     sp.add_argument("--no-hybrid", action="store_true", help="disable BM25 fusion")
     sp.add_argument("--json", action="store_true", help="machine-readable output")
     sp.set_defaults(func=cmd_search)

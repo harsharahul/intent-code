@@ -36,7 +36,11 @@ _SEARCH_PROPS = {
     },
     "filters": {
         "type": "object",
-        "description": "metadata equality filters, e.g. {\"lang\":\"python\",\"kind\":\"function\"}",
+        "description": (
+            "metadata equality filters, e.g. "
+            "{\"lang\":\"python\",\"kind\":\"function\"}. Use {\"repo\":\"name\"} to "
+            "scope to one repository when the index spans several (see code_stats)."
+        ),
     },
     "hybrid": {"type": "boolean", "default": True},
 }

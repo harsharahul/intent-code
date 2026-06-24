@@ -73,6 +73,25 @@ def test_cli_read_flow_context(repo, capsys):
     assert main(["read", str(root), "nope"]) == 1
 
 
+def test_cli_search_repo_scope(repo, capsys):
+    root = repo(
+        {
+            "repoA/.git/HEAD": "x\n",
+            "repoA/svc.py": "def alpha():\n    return 1\n",
+            "repoB/.git/HEAD": "x\n",
+            "repoB/svc.py": "def beta():\n    return 2\n",
+        }
+    )
+    main(["index", str(root), "--embedder", "hashing:dim=512"])
+    capsys.readouterr()
+    # --repo must not collide with the positional repo path (regression guard)
+    assert main(["search", str(root), "alpha beta", "--repo", "repoA", "--json", "-k", "10"]) == 0
+    hits = json.loads(capsys.readouterr().out)
+    names = {h["qualname"] for h in hits}
+    assert "alpha" in names and "beta" not in names
+    assert all(h["repo"] == "repoA" for h in hits)
+
+
 def test_cli_init_agent_all(repo, capsys):
     root = repo({"a.py": "def foo():\n    return 1\n"})
     assert (
