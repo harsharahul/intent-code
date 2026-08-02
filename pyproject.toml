@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "intent-code"
-version = "0.2.4"
+version = "0.2.5"
 description = "Intent-aware code-knowledge index for LLM agents, built on intent-db: index a repo once, query it by intent, cut the token cost of re-reading files."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,17 +21,14 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Topic :: Software Development :: Libraries",
 ]
+# tree-sitter grammars are REQUIRED. Without them every file falls back to text
+# chunking and the symbol layer stays empty, which is the layer `search`, `read`,
+# `flow`, `context` and the repo map are all built on. We depend on the OFFICIAL
+# tree-sitter org packages (github.com/tree-sitter/*) rather than a third-party
+# meta-bundle, for auditable provenance. Exact versions are hash-pinned in uv.lock.
 dependencies = [
   "intent-vector-db>=0.2.3,<0.3", # the intent-db library (PyPI dist name; import is `intentdb`)
   "pathspec>=0.12,<2",            # gitignore matching; MPL-2.0 (used as a library, not modified)
-]
-
-# tree-sitter is OPTIONAL. Without it the indexer falls back to text chunking, so the
-# base install stays tiny (intent-vector-db + pathspec). We depend on the OFFICIAL tree-sitter
-# org packages (github.com/tree-sitter/*) rather than a third-party meta-bundle, for
-# auditable provenance. Exact versions are hash-pinned in uv.lock.
-[project.optional-dependencies]
-treesitter = [
   "tree-sitter>=0.23,<0.26",
   "tree-sitter-python>=0.23,<0.26",
   "tree-sitter-javascript>=0.23,<0.26",
@@ -44,6 +41,11 @@ treesitter = [
   "tree-sitter-ruby>=0.23,<0.26",
   "tree-sitter-c-sharp>=0.23,<0.26",
 ]
+
+[project.optional-dependencies]
+# Kept so existing `intent-code[treesitter]` commands and docs keep resolving.
+# The grammars are core dependencies now, so this extra adds nothing.
+treesitter = []
 dev = ["pytest>=9.0.3,<10", "pip-audit>=2.7"]  # pytest floor avoids CVE-2025-71176
 
 [project.scripts]

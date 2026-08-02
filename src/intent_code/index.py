@@ -27,6 +27,20 @@ _RESERVED_LAYERS = {"manifest", "repomap"}
 LOCK_STALE_SECONDS = 300.0
 
 
+def manifest_has_symbols(files: dict[str, Any]) -> bool:
+    """True if any indexed file produced symbol-layer documents.
+
+    When no tree-sitter grammar can parse a file it falls back to text chunks.
+    If that happens for every file, a search filtered to the symbol layer can
+    never match anything, however healthy the index looks.
+    """
+    return any(
+        key.endswith("#sym")
+        for entry in files.values()
+        for key in entry.get("symbols", {})
+    )
+
+
 @dataclass
 class IndexReport:
     added: int = 0
@@ -110,6 +124,7 @@ class CodeIndex:
         self._embedder_mismatch = False
         self._reported_status: str | None = None
         self._db_ident: tuple[int, int] | None = None
+        self._symbols_present: bool | None = None
         self._open_db()
 
     # -- database lifecycle ---------------------------------------------------
@@ -149,6 +164,7 @@ class CodeIndex:
 
         self.idb = IntentDB(str(self.db_path), embedder=spec)
         self._db_ident = self._current_db_ident()
+        self._symbols_present = None
 
         from .notes import NotesStore
 
@@ -336,8 +352,10 @@ class CodeIndex:
         manifest = {
             "version": 1,
             "embedder": self.embedder_spec,
+            "has_symbols": manifest_has_symbols(new_files),
             "files": new_files,
         }
+        self._symbols_present = manifest["has_symbols"]
         # A clean poll (only stat checks, nothing changed) does no writes: skip the
         # graph/repo-map rebuild and the manifest save entirely.
         symbols_changed = bool(added or changed or removed)
@@ -592,18 +610,40 @@ class CodeIndex:
             except OSError:
                 pass
 
+    def index_has_symbols(self) -> bool:
+        """Whether the index holds any symbol-layer documents (cached)."""
+        if self._symbols_present is None:
+            manifest = _manifest.load_manifest(self.idb)
+            if "has_symbols" in manifest:
+                self._symbols_present = bool(manifest["has_symbols"])
+            else:  # index written before this was recorded
+                self._symbols_present = manifest_has_symbols(manifest.get("files", {}))
+        return self._symbols_present
+
+    def effective_layer(self, layer: str | None) -> str:
+        """Resolve the layer to search.
+
+        An explicit choice is honoured exactly. With no choice the default is
+        the symbol layer, which gives precise `file:line` answers, unless the
+        index contains no symbols at all, in which case filtering to symbols
+        could only ever return nothing and `any` is the useful answer.
+        """
+        if layer is not None:
+            return layer
+        return "symbol" if self.index_has_symbols() else "any"
+
     def search(
         self,
         query: str,
         intent: str | None = None,
         k: int = 8,
-        layer: str | None = "symbol",
+        layer: str | None = None,
         filters: dict | None = None,
         hybrid: bool = True,
         auto_intent: bool = True,
     ) -> list[dict]:
         self._refresh()
-        where = self._build_where(layer, filters)
+        where = self._build_where(self.effective_layer(layer), filters)
         with self._embedder_guard():
             results = self.idb.query(
                 query,
@@ -785,6 +825,10 @@ class CodeIndex:
         s["repos"] = dict(sorted(repos.items()))
         s["embedder"] = self.embedder_spec
         s["embedder_status"] = self.embedder_status
+        # Make the resolved default visible rather than implicit: an index with
+        # no symbols answers a default search from every layer.
+        s["has_symbols"] = self.index_has_symbols()
+        s["default_layer"] = self.effective_layer(None)
         remedy = self._status_message()
         if remedy:
             s["embedder_remedy"] = remedy

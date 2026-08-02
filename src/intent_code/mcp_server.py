@@ -31,8 +31,8 @@ _SEARCH_PROPS = {
     "layer": {
         "type": "string",
         "enum": ["symbol", "chunk", "note", "any"],
-        "default": "symbol",
-        "description": "which layer to search",
+        "description": "which layer to search; omit to use the symbol layer, "
+        "falling back to any when the index holds no symbols",
     },
     "filters": {
         "type": "object",
@@ -216,7 +216,7 @@ def call_tool(ci: CodeIndex, name: str, arguments: dict[str, Any]) -> Any:
             arguments["query"],
             intent=arguments.get("intent"),
             k=int(arguments.get("k", 8)),
-            layer=arguments.get("layer", "symbol"),
+            layer=arguments.get("layer"),
             filters=arguments.get("filters"),
             hybrid=bool(arguments.get("hybrid", True)),
         )
