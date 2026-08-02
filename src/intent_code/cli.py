@@ -20,11 +20,23 @@ from .index import CodeIndex
 from .protocol import PROTOCOL_MD
 
 
-def _open(args) -> CodeIndex:
+def _progress(message: str) -> None:
+    print(message, file=sys.stderr)
+
+
+def _open(args, interactive: bool = False) -> CodeIndex:
+    """Open the index for a command.
+
+    `interactive` marks the explicit index/init commands, where a human is
+    watching stderr: only those may fetch a missing embedding model, and only
+    those print progress. A search must never trigger a large download.
+    """
     return CodeIndex(
         args.repo,
         embedder=getattr(args, "embedder", None),
         local_knowledge=getattr(args, "local", False),
+        allow_pull=interactive and not getattr(args, "no_pull_model", False),
+        on_progress=_progress if interactive else None,
     )
 
 
@@ -38,9 +50,7 @@ _NEXT_HINT = {
 def cmd_init(args) -> int:
     from .agents import resolve_agents, wire_agents
 
-    with CodeIndex(
-        args.repo, embedder=args.embedder, local_knowledge=args.local
-    ) as ci:
+    with _open(args, interactive=True) as ci:
         report = ci.index(full=True)
         if report.embedder_warning:
             print(f"warning: {report.embedder_warning}", file=sys.stderr)
@@ -76,7 +86,7 @@ def _add_repo(sp: argparse.ArgumentParser) -> None:
 
 
 def cmd_index(args) -> int:
-    with _open(args) as ci:
+    with _open(args, interactive=True) as ci:
         report = ci.index(full=args.full)
     if report.embedder_warning:
         print(f"warning: {report.embedder_warning}", file=sys.stderr)
@@ -279,6 +289,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="agent(s) to wire up; repeatable (default: claude)",
     )
     sp.add_argument("--embedder", help="embedder spec (default: auto-detect)")
+    sp.add_argument(
+        "--no-pull-model",
+        action="store_true",
+        help="never download a missing embedding model automatically",
+    )
     _add_local(sp)
     sp.set_defaults(func=cmd_init)
 
@@ -292,6 +307,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_repo(sp)
     sp.add_argument("--full", action="store_true", help="force a full rebuild")
     sp.add_argument("--embedder", help="embedder spec (default: auto-detect)")
+    sp.add_argument(
+        "--no-pull-model",
+        action="store_true",
+        help="never download a missing embedding model automatically",
+    )
     _add_local(sp)
     sp.set_defaults(func=cmd_index)
 

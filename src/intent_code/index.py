@@ -18,10 +18,13 @@ from . import cast_chunk
 from . import manifest as _manifest
 from . import parsing
 from . import walk as _walk
-from .embedder_auto import auto_embedder_spec, describe_auto
+from .embedder_auto import describe_auto, embedder_guard, embedder_identity
 from .intents import register_code_intents
 
 _RESERVED_LAYERS = {"manifest", "repomap"}
+
+#: a reindex lock older than this was left behind by a killed process
+LOCK_STALE_SECONDS = 300.0
 
 
 @dataclass
@@ -34,6 +37,9 @@ class IndexReport:
     stale_notes: list[str] = field(default_factory=list)
     embedder_spec: str = ""
     embedder_warning: str | None = None
+    embedder_status: str = "ok"
+    embedder_remedy: str | None = None
+    rebuild: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = {
@@ -44,9 +50,16 @@ class IndexReport:
             "files_skipped": self.files_skipped,
             "stale_notes": self.stale_notes,
             "embedder_spec": self.embedder_spec,
+            # Always present, unlike the prose warning: a degraded embedder used
+            # to be announced once and then stay invisible forever.
+            "embedder_status": self.embedder_status,
         }
         if self.embedder_warning:
             d["embedder_warning"] = self.embedder_warning
+        if self.embedder_remedy:
+            d["embedder_remedy"] = self.embedder_remedy
+        if self.rebuild:
+            d["rebuild"] = self.rebuild
         return d
 
 
@@ -61,6 +74,8 @@ class CodeIndex:
         local_knowledge: bool = False,
         auto_refresh: bool = True,
         refresh_ttl: float = 2.0,
+        allow_pull: bool = False,
+        on_progress: Callable[[str], None] | None = None,
     ):
         self.root = Path(repo_root).resolve()
         self.idb_dir = self.root / ".intentdb"
@@ -85,18 +100,113 @@ class CodeIndex:
         self.knowledge_dir = (
             self.idb_dir / "codemap" if local_knowledge else self.root / "docs" / "codemap"
         )
+        # Auto-pull is a several-hundred-MB download, so it is opt-in per call
+        # site: explicit index/init commands allow it, query paths never do.
+        self._allow_pull = allow_pull
+        self._on_progress = on_progress
+        self._explicit_embedder = embedder
+        self._detected_spec: str | None = None
+        self._fallback_warning: str | None = None
+        self._embedder_mismatch = False
+        self._reported_status: str | None = None
+        self._db_ident: tuple[int, int] | None = None
+        self._open_db()
+
+    # -- database lifecycle ---------------------------------------------------
+
+    def _current_db_ident(self) -> tuple[int, int] | None:
+        try:
+            st = self.db_path.stat()
+        except OSError:
+            return None
+        return (st.st_dev, st.st_ino)
+
+    def _open_db(self) -> None:
+        """Open the store, re-running embedder detection every time.
+
+        Detection is not a one-off decision made when the file is created. An
+        index built while Ollama was down would otherwise stay on the hashing
+        fallback forever, silently, because the stored spec is restored on every
+        later open and the fallback warning was only ever emitted once.
+
+        An existing store is always opened with *its own* spec, never the newly
+        detected one: the dimensions would disagree and intent-db would refuse.
+        The difference is recorded instead, and `index(full=True)` acts on it.
+        This is safe even when the stored spec names an unreachable Ollama server,
+        because a stored spec carries an explicit dim and so skips the network
+        probe that would otherwise run at construction.
+        """
         first = not self.db_path.exists()
-        self._embedder_warning: str | None = None
-        if embedder:
-            spec = embedder
-        elif first:
-            spec, self._embedder_warning = describe_auto()
+        detected: str | None = None
+        warning: str | None = None
+        if self._explicit_embedder:
+            spec: str | None = self._explicit_embedder
         else:
-            spec = None
+            detected, warning = describe_auto(
+                allow_pull=self._allow_pull, on_progress=self._on_progress
+            )
+            spec = detected if first else None
+
         self.idb = IntentDB(str(self.db_path), embedder=spec)
+        self._db_ident = self._current_db_ident()
+
         from .notes import NotesStore
 
         self.notes = NotesStore(self.idb, self.knowledge_dir)
+
+        self._detected_spec = detected
+        self._fallback_warning = warning
+        self._embedder_mismatch = bool(
+            detected is not None
+            and embedder_identity(detected) != embedder_identity(self.idb.embedder.spec)
+        )
+
+    def _ensure_live(self) -> None:
+        """Reopen if the database file was deleted or replaced underneath us.
+
+        The MCP server holds one CodeIndex for the whole process lifetime, so a
+        store removed or swapped out by anything else (a manual delete, a rebuild
+        from another process) would leave it answering from a file that no longer
+        exists, reporting a confident "nothing changed" that is simply false.
+        One stat per call is enough to catch it.
+        """
+        if self._db_ident == self._current_db_ident():
+            return
+        try:
+            self.idb.close()
+        except Exception:
+            pass
+        self._open_db()
+
+    # -- embedder status ------------------------------------------------------
+
+    @property
+    def embedder_status(self) -> str:
+        """`ok`, `hashing_fallback`, or `mismatch`."""
+        if self._explicit_embedder:
+            return "ok"
+        if self._embedder_mismatch:
+            return "mismatch"
+        if self._fallback_warning:
+            return "hashing_fallback"
+        return "ok"
+
+    def _embedder_guard(self):
+        """Convert an unreachable embedding backend into an actionable error."""
+        return embedder_guard(self.embedder_spec, self._detected_spec)
+
+    def _status_message(self) -> str | None:
+        status = self.embedder_status
+        if status == "mismatch":
+            return (
+                f"this index was built with {self.embedder_spec} but "
+                f"{self._detected_spec} is now available; run "
+                "`intent-code index --full` to rebuild with it (notes, feedback "
+                "and learned weights are preserved)."
+            )
+        if status == "hashing_fallback":
+            return self._fallback_warning
+        return None
 
     def _write_knowledge_file(self, name: str, content: str) -> None:
         self.knowledge_dir.mkdir(parents=True, exist_ok=True)
@@ -119,7 +229,35 @@ class CodeIndex:
 
     # -- indexing -------------------------------------------------------------
 
+    def _adopt_detected_embedder(self) -> dict[str, Any]:
+        """Rebuild the store under the newly detected embedder.
+
+        Only called from a full index, which re-embeds every document anyway, so
+        adopting the better embedder at that point costs nothing extra.
+        """
+        from .migrate import rebuild_with_embedder
+
+        desired = self._detected_spec
+        assert desired is not None  # guarded by embedder_status == "mismatch"
+        self.idb.close()
+        try:
+            # If the backend dies mid-rebuild the original store is untouched
+            # (migrate swaps only at the very end), so this is recoverable.
+            with embedder_guard(desired, desired):
+                return rebuild_with_embedder(
+                    self.db_path, desired, on_progress=self._on_progress
+                )
+        finally:
+            # Reopen whatever we ended up with, successful rebuild or not.
+            self._open_db()
+
     def index(self, full: bool = False) -> IndexReport:
+        self._ensure_live()
+        rebuild = (
+            self._adopt_detected_embedder()
+            if full and self.embedder_status == "mismatch"
+            else None
+        )
         old = _manifest.empty_manifest() if full else _manifest.load_manifest(self.idb)
         old_files: dict[str, Any] = old.get("files", {})
         new_files: dict[str, Any] = {}
@@ -187,7 +325,8 @@ class CodeIndex:
 
         removed = self._delete_keys(to_remove)
         if add_items:
-            self.idb.add_many(add_items)
+            with self._embedder_guard():
+                self.idb.add_many(add_items)
 
         # Register the intent pack once the corpus exists (lens fits real stats),
         # or on an explicit full rebuild.
@@ -206,9 +345,6 @@ class CodeIndex:
         if manifest_changed or symbols_changed:
             _manifest.save_manifest(self.idb, manifest)
 
-        # Surface the embedder fallback warning only once: a long-running MCP
-        # server reuses one CodeIndex, so clear it after the first report.
-        warning, self._embedder_warning = self._embedder_warning, None
         return IndexReport(
             added=added,
             changed=changed,
@@ -217,8 +353,25 @@ class CodeIndex:
             files_skipped=skipped,
             stale_notes=stale,
             embedder_spec=self.embedder_spec,
-            embedder_warning=warning,
+            embedder_warning=self._warning_on_change(),
+            embedder_status=self.embedder_status,
+            embedder_remedy=self._status_message(),
+            rebuild=rebuild,
         )
+
+    def _warning_on_change(self) -> str | None:
+        """The prose warning, emitted when the status changes rather than once.
+
+        A long-running MCP server reuses one CodeIndex, so repeating the same
+        sentence on every call would be noise; but suppressing it after the first
+        report is what let a degraded embedder go unnoticed. The structured
+        `embedder_status` is always present regardless.
+        """
+        status = self.embedder_status
+        if status == self._reported_status:
+            return None
+        self._reported_status = status
+        return self._status_message()
 
     def _index_file(self, sf, data: bytes, prev):
         text = data.decode("utf-8", "replace")
@@ -316,9 +469,10 @@ class CodeIndex:
         g = _graph.build_graph(manifest)
         ranks = _graph.pagerank(g)
         repomap_md = _graph.render_map(manifest, ranks)
-        self.idb.add(
-            repomap_md, doc_key=_manifest.REPOMAP_KEY, metadata={"layer": "repomap"}
-        )
+        with self._embedder_guard():
+            self.idb.add(
+                repomap_md, doc_key=_manifest.REPOMAP_KEY, metadata={"layer": "repomap"}
+            )
         self._write_knowledge_file("MAP.md", repomap_md)
         return self._refresh_notes(manifest, old_files)
 
@@ -387,18 +541,41 @@ class CodeIndex:
             return True  # never scanned
         return (time.time() - last) >= self._refresh_ttl
 
+    def _take_lock(self, lock: Path) -> bool:
+        """Take the reindex lock, breaking one left behind by a killed process.
+
+        Without the staleness check a single crash mid-index would disable
+        auto-refresh permanently and silently, since the contended path just
+        returns.
+        """
+        try:
+            os.close(os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return True
+        except FileExistsError:
+            pass
+        try:
+            age = time.time() - lock.stat().st_mtime
+        except OSError:
+            return False  # vanished under us; another process owns it
+        if age < LOCK_STALE_SECONDS:
+            return False  # another process is genuinely reindexing
+        try:
+            lock.unlink()
+            os.close(os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return True
+        except OSError:
+            return False
+
     def _refresh(self) -> None:
         """Pick up edits before a query: re-index if files are queued dirty, or
         (auto-refresh) if the poll TTL has elapsed. The stat gate in index() makes
         a no-change poll nearly free. Serialized by a lockfile across processes."""
+        self._ensure_live()
         if not (self._read_dirty() or self._scan_due()):
             return
         lock = self.idb_dir / "reindex.lock"
-        try:
-            fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.close(fd)
-        except FileExistsError:
-            return  # another process is already reindexing
+        if not self._take_lock(lock):
+            return
         try:
             self.index()
             try:
@@ -427,15 +604,16 @@ class CodeIndex:
     ) -> list[dict]:
         self._refresh()
         where = self._build_where(layer, filters)
-        results = self.idb.query(
-            query,
-            intent=intent,
-            k=k,
-            auto_intent=auto_intent,
-            where=where,
-            hybrid=hybrid,
-            log=False,
-        )
+        with self._embedder_guard():
+            results = self.idb.query(
+                query,
+                intent=intent,
+                k=k,
+                auto_intent=auto_intent,
+                where=where,
+                hybrid=hybrid,
+                log=False,
+            )
         return [self._format_hit(r) for r in results]
 
     @staticmethod
@@ -595,6 +773,7 @@ class CodeIndex:
         self.idb.record_feedback(query, doc_key, useful=useful, intent=intent)
 
     def stats(self) -> dict:
+        self._ensure_live()
         s = dict(self.idb.stats())
         manifest = _manifest.load_manifest(self.idb)
         files = manifest.get("files", {})
@@ -605,4 +784,8 @@ class CodeIndex:
             repos[key] = repos.get(key, 0) + 1
         s["repos"] = dict(sorted(repos.items()))
         s["embedder"] = self.embedder_spec
+        s["embedder_status"] = self.embedder_status
+        remedy = self._status_message()
+        if remedy:
+            s["embedder_remedy"] = remedy
         return s
