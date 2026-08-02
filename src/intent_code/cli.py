@@ -322,9 +322,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("-k", type=int, default=8, help="number of results")
     sp.add_argument(
         "--layer",
-        default="symbol",
+        default=None,
         choices=["symbol", "chunk", "note", "any"],
-        help="which layer to search (default: symbol)",
+        help="which layer to search (default: symbol, or any when the index "
+        "holds no symbols)",
     )
     sp.add_argument("--lang", help="filter by language")
     sp.add_argument("--kind", help="filter by symbol kind (function/class/...)")

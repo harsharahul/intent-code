@@ -13,10 +13,11 @@ The latest released version receives security fixes.
 
 ## Supply-chain practices
 
-- Minimal runtime dependencies. tree-sitter support is an optional extra and uses
-  the official tree-sitter organization grammar packages.
-- Dependency versions are bounded in `pyproject.toml` and pinned with hashes in
-  `uv.lock`.
+- Few runtime dependencies, all from the official tree-sitter organization for
+  the grammars.
+- Dependency versions are bounded in `pyproject.toml`, and CI installs from those
+  bounds. The `uv.lock` used for local development is not published, because it
+  resolves the intent-db library from a working copy rather than from PyPI.
 - CI audits dependencies with `pip-audit` on every push and pull request.
 - GitHub Actions are pinned to commit SHAs, and workflows run with least-
   privilege permissions.

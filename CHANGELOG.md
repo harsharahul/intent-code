@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.5] - 2026-08-02
+
+### Changed
+- tree-sitter grammars are now required rather than an optional extra. They
+  produce the symbol layer that search, `read`, `flow`, `context` and the repo
+  map are built on, so an install without them could index a repository and then
+  answer every search with nothing. `intent-code[treesitter]` still resolves and
+  installs the same thing.
+
+### Fixed
+- A search with no explicit `--layer` now returns results from every layer when
+  the index holds no symbols, instead of filtering to the symbol layer and
+  matching nothing. This affected repositories where no file has a grammar, such
+  as documentation-only trees.
+- `intent-code stats` reports `has_symbols` and the resolved `default_layer`.
+- The security notes no longer describe tree-sitter as optional, and no longer
+  claim a published lockfile: `uv.lock` is a local development artifact that
+  resolves the intent-db library from a working copy, so it is not committed.
+
 ## [0.2.4] - 2026-08-02
 
 ### Added

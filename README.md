@@ -148,6 +148,12 @@ The index is a single intent-db SQLite file under `.intentdb/` (add it to your
 - `chunk`: AST-aware chunks for text or grammar-less files.
 - `note`: durable, human-authored gotcha and flow articles.
 
+Search looks at the `symbol` layer by default, since those answers carry a
+precise `file:line`. If an index holds no symbols at all, which happens when
+nothing in the repository has a grammar, the default widens to every layer
+rather than returning nothing. `intent-code stats` reports the resolved
+`default_layer`, and `--layer` overrides it.
+
 A dependency graph and PageRank ranking are derived from the symbol edges to
 produce the repo map and `neighbors` tracing. Re-indexing hashes each file and
 re-embeds only the symbols whose content changed.
@@ -197,9 +203,9 @@ python -m intent_code.eval.run /path/to/repo
 
 ## Security and supply chain
 
-Minimal runtime dependencies, official tree-sitter grammars, version bounds plus
-a hash-pinned lockfile, dependency auditing in CI, SHA-pinned GitHub Actions, and
-PyPI trusted publishing. See [SECURITY.md](SECURITY.md).
+Few runtime dependencies, official tree-sitter grammars, bounded versions,
+dependency auditing in CI, SHA-pinned GitHub Actions, and PyPI trusted
+publishing. See [SECURITY.md](SECURITY.md).
 
 ## License
 
