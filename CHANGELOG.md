@@ -4,6 +4,43 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.4] - 2026-08-02
+
+### Added
+- Automatic embedding-model setup: when `intent-code index` or `init` finds Ollama
+  running without `nomic-embed-text`, it fetches the model once and reports
+  download progress. Query paths never download, so a search cannot stall on it.
+  Disable per run with `--no-pull-model`, or globally with
+  `INTENT_CODE_AUTO_PULL=0`; `INTENT_CODE_AUTO_PULL=1` allows it from any path.
+- `embedder_status` on index reports and `intent-code stats`: `ok`,
+  `hashing_fallback`, or `mismatch`, with a remedy describing the fix.
+- `intent-code index --full` adopts a newly available embedder, rebuilding the
+  store while preserving notes and their staleness tracking, relevance feedback,
+  the query log and learned ranking weights.
+
+### Fixed
+- The embedder is re-detected every time an index is opened. Previously it was
+  chosen only when the database file was first created, so an index built while
+  Ollama was unreachable stayed on the lexical hashing embedder permanently, and
+  a full re-index faithfully rebuilt it with that same embedder.
+- Ollama detection now checks that the embedding model is actually present rather
+  than only that the server responds, and matches tagged names such as
+  `nomic-embed-text:latest`. A running server without the model falls back
+  cleanly instead of failing later during indexing.
+- An index whose database file is deleted or replaced while in use is reopened
+  automatically. A long-running MCP server previously kept answering from its
+  in-memory copy and reported that nothing had changed.
+- A reindex lock left behind by an interrupted process no longer disables
+  query-time freshness indefinitely.
+- An unreachable embedding backend now raises `EmbedderUnavailable` naming the
+  command that fixes it, instead of a bare connection error from inside urllib.
+  An index built against Ollama keeps using Ollama, so stopping the server made
+  every search fail with no indication that one command would recover it.
+- Concurrent rebuilds of the same repository no longer collide. Each attempt now
+  uses its own scratch filenames, so two processes adopting a new embedder at the
+  same time cannot delete each other's partial work (previously surfaced as a
+  SQLite disk I/O error in whichever process was mid-write).
+
 ## [0.2.3] - 2026-06-24
 
 ### Added

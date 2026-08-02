@@ -152,9 +152,36 @@ A dependency graph and PageRank ranking are derived from the symbol edges to
 produce the repo map and `neighbors` tracing. Re-indexing hashes each file and
 re-embeds only the symbols whose content changed.
 
-The default embedder auto-detects: a local Ollama model (`nomic-embed-text`) if
-reachable, otherwise the zero-dependency hashing embedder, with BM25 hybrid
-search always on for exact symbol matches.
+BM25 hybrid search is always on, so exact symbol matches land regardless of which
+embedder is in use.
+
+## Embedder
+
+The embedder auto-detects on every open: a local Ollama model
+(`nomic-embed-text`) when the server is reachable *and* holds the model,
+otherwise the zero-dependency hashing embedder. Hashing is lexical only, so
+conceptual queries are much weaker; the index still works, just less well.
+
+If `intent-code index` finds Ollama running without the model, it fetches the
+model once and reports progress. Query paths never do: a search will not trigger
+a download.
+
+Detection is not a one-off decision made when the index is created. If an index
+was built while Ollama was down, later commands report a `mismatch` status and
+`intent-code index --full` rebuilds under the better embedder, preserving notes
+(including their staleness tracking), relevance feedback and learned ranking
+weights.
+
+```bash
+intent-code stats .                    # embedder, embedder_status, remedy
+intent-code index . --full             # adopt a newly available embedder
+intent-code index . --no-pull-model    # never download automatically
+```
+
+| Variable | Effect |
+| --- | --- |
+| `INTENT_CODE_EMBEDDER` | Force a spec, e.g. `hashing:dim=512`. Skips detection. |
+| `INTENT_CODE_AUTO_PULL` | `0` never downloads a model, `1` allows it from any path. |
 
 ## Benchmark
 

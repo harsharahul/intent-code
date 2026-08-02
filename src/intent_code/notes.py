@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import manifest as _manifest
+from .embedder_auto import embedder_guard
 
 
 def slugify(note_id: str) -> str:
@@ -51,17 +52,18 @@ class NotesStore:
         path = self.notes_dir / f"{slug}.md"
         path.write_text(markdown, encoding="utf-8")
 
-        self.idb.add(
-            markdown,
-            doc_key=self._doc_key(slug),
-            metadata={
-                "layer": "note",
-                "slug": slug,
-                "covers": covers,
-                "covers_sha": covers_sha,
-                "stale": False,
-            },
-        )
+        with embedder_guard(self.idb.embedder.spec):
+            self.idb.add(
+                markdown,
+                doc_key=self._doc_key(slug),
+                metadata={
+                    "layer": "note",
+                    "slug": slug,
+                    "covers": covers,
+                    "covers_sha": covers_sha,
+                    "stale": False,
+                },
+            )
         self._append_log("note", slug)
         self.rewrite_index(m)
         return {"slug": slug, "path": str(path), "covers": covers}
@@ -114,7 +116,10 @@ class NotesStore:
             if meta.get("stale"):
                 continue
             meta["stale"] = True
-            self.idb.add(rec.get("text", ""), doc_key=self._doc_key(slug), metadata=meta)
+            with embedder_guard(self.idb.embedder.spec):
+                self.idb.add(
+                    rec.get("text", ""), doc_key=self._doc_key(slug), metadata=meta
+                )
 
     def rewrite_index(self, manifest: dict | None = None) -> None:
         slugs = self.slugs()
